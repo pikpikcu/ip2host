@@ -2,6 +2,8 @@
 
 This tool performs TLS connections to specified IP addresses, retrieves host information, and optionally gathers detailed IP information using the `ipapi.co` API.
 
+![ip2host](ipinfo.png)
+
 ## Features
 
 - Retrieve host information from IP addresses with specified ports.
