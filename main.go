@@ -15,6 +15,7 @@ import (
 
 	ztls "github.com/zmap/zcrypto/tls"
 //	zx509 "github.com/zmap/zcrypto/x509"
+	"github.com/miekg/dns"
 )
 
 type Result struct {
@@ -55,6 +56,13 @@ func main() {
 		host := retryGetHostFromIP(ip, port, *timeout, *retry)
 		ctlsResult, ztlsResult, opensslResult := "", "", ""
 		ipInfo := Result{}
+
+		if host == "unknown" {
+			host = getHostByPTR(ip)
+			if host == "" {
+				host = getHostBySOA(ip)
+			}
+		}
 
 		if *debug {
 			ctlsResult = getTLSInfo(ip, port, *timeout)
@@ -136,6 +144,7 @@ func getHostFromIP(ip, port string, timeout int) string {
 	}
 	defer conn.Close()
 
+	// Extract the domain name from the certificate
 	for _, cert := range conn.ConnectionState().PeerCertificates {
 		for _, name := range cert.DNSNames {
 			if strings.TrimSpace(name) != "" {
@@ -217,6 +226,46 @@ func getIPInfo(ip string) Result {
 	}
 
 	return result
+}
+
+func getHostByPTR(ip string) string {
+	names, err := net.LookupAddr(ip)
+	if err != nil || len(names) == 0 {
+		return ""
+	}
+	return strings.TrimSuffix(names[0], ".")
+}
+
+func getHostBySOA(ip string) string {
+	arpa, err := getReverseDNS(ip)
+	if err != nil {
+		return ""
+	}
+
+	m := new(dns.Msg)
+	m.SetQuestion(dns.Fqdn(arpa), dns.TypeSOA)
+
+	c := new(dns.Client)
+	in, _, err := c.Exchange(m, "8.8.8.8:53")
+	if err != nil {
+		return ""
+	}
+
+	for _, answer := range in.Ns {
+		if soa, ok := answer.(*dns.SOA); ok {
+			return fmt.Sprintf("%s %s", soa.Ns, soa.Mbox)
+		}
+	}
+	return ""
+}
+
+func getReverseDNS(ip string) (string, error) {
+	ip = net.ParseIP(ip).String()
+	rev, err := dns.ReverseAddr(ip)
+	if err != nil {
+		return "", err
+	}
+	return rev, nil
 }
 
 func outputJSONLine(result Result, outputFile string) {
