@@ -10,9 +10,11 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
+
+	ztls "github.com/zmap/zcrypto/tls"
+//	zx509 "github.com/zmap/zcrypto/x509"
 )
 
 type Result struct {
@@ -55,9 +57,9 @@ func main() {
 		ipInfo := Result{}
 
 		if *debug {
-			ctlsResult = runCommand("ctls", ip+":"+port)
-			ztlsResult = runCommand("ztls", ip+":"+port)
-			opensslResult = runCommand("openssl", "s_client", "-connect", ip+":"+port)
+			ctlsResult = getTLSInfo(ip, port, *timeout)
+			ztlsResult = getZTLSInfo(ip, port, *timeout)
+			opensslResult = getOpenSSLInfo(ip, port, *timeout)
 			ipInfo = getIPInfo(ip)
 		}
 
@@ -145,13 +147,55 @@ func getHostFromIP(ip, port string, timeout int) string {
 	return "unknown"
 }
 
-func runCommand(command string, args ...string) string {
-	cmd := exec.Command(command, args...)
-	output, err := cmd.CombinedOutput()
+func getTLSInfo(ip, port string, timeout int) string {
+	conn, err := tls.DialWithDialer(&net.Dialer{
+		Timeout: time.Duration(timeout) * time.Second,
+	}, "tcp", ip+":"+port, &tls.Config{
+		InsecureSkipVerify: true,
+	})
 	if err != nil {
-		return "error"
+		return fmt.Sprintf("error: %v", err)
 	}
-	return strings.TrimSpace(string(output))
+	defer conn.Close()
+
+	state := conn.ConnectionState()
+	return fmt.Sprintf("Version: %x, CipherSuite: %x", state.Version, state.CipherSuite)
+}
+
+func getZTLSInfo(ip, port string, timeout int) string {
+	config := &ztls.Config{
+		InsecureSkipVerify: true,
+	}
+	conn, err := ztls.DialWithDialer(&net.Dialer{
+		Timeout: time.Duration(timeout) * time.Second,
+	}, "tcp", ip+":"+port, config)
+	if err != nil {
+		return fmt.Sprintf("error: %v", err)
+	}
+	defer conn.Close()
+
+	state := conn.ConnectionState()
+	return fmt.Sprintf("Version: %x, CipherSuite: %x", state.Version, state.CipherSuite)
+}
+
+func getOpenSSLInfo(ip, port string, timeout int) string {
+	conn, err := tls.DialWithDialer(&net.Dialer{
+		Timeout: time.Duration(timeout) * time.Second,
+	}, "tcp", ip+":"+port, &tls.Config{
+		InsecureSkipVerify: true,
+	})
+	if err != nil {
+		return fmt.Sprintf("error: %v", err)
+	}
+	defer conn.Close()
+
+	state := conn.ConnectionState()
+	certs := state.PeerCertificates
+	var certDetails strings.Builder
+	for _, cert := range certs {
+		certDetails.WriteString(fmt.Sprintf("Subject: %s, Issuer: %s, Expiry: %s\n", cert.Subject, cert.Issuer, cert.NotAfter))
+	}
+	return certDetails.String()
 }
 
 func getIPInfo(ip string) Result {
