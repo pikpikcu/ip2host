@@ -17,7 +17,10 @@ This tool performs TLS connections to specified IP addresses, retrieves host inf
 You can install this tool directly using Go:
 
 ```sh
-go install -a -v github.com/pikpikcu/ip2host@latest
+git clone https://github.com/pikpikcu/ip2host
+cd ip2host
+go build -o ip2host main.go
+sudo mv ip2host /usr/local/bin/
 ```
 ## Usage
 ```sh
